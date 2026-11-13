@@ -1,0 +1,10 @@
+{
+  "name": "treina",
+  "private": true,
+  "type": "module",
+  "description": "Treina: personal trainer com IA, registo de treinos e sincronização com o Google Drive",
+  "scripts": {
+    "test": "node --test test/*.test.js",
+    "serve": "python3 -m http.server 8080"
+  }
+}

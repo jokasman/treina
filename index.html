@@ -1,0 +1,48 @@
+<!doctype html>
+<html lang="pt-PT">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <title>Treina</title>
+  <meta name="description" content="O teu personal trainer com IA: plano definido pelo PT, registo de treinos e progresso.">
+  <meta name="theme-color" content="#F4F5F8" media="(prefers-color-scheme: light)">
+  <meta name="theme-color" content="#121418" media="(prefers-color-scheme: dark)">
+  <link rel="manifest" href="manifest.webmanifest">
+  <link rel="icon" href="icons/icon-192.png" type="image/png">
+  <link rel="apple-touch-icon" href="icons/apple-touch-icon.png">
+  <link rel="stylesheet" href="css/app.css">
+  <script type="module" src="js/app.js"></script>
+</head>
+<body>
+  <header id="topo">
+    <a id="voltar" href="#hoje" hidden aria-label="Voltar">‹</a>
+    <h1 id="titulo">Treina</h1>
+    <button id="sync" data-acao="drive-sync" hidden aria-label="Sincronizar com o Google Drive">☁️</button>
+  </header>
+
+  <main id="conteudo" aria-live="polite">
+    <p class="muted centro">A carregar…</p>
+  </main>
+
+  <div id="timer" hidden>
+    <div id="timer-barra"></div>
+    <div class="timer-info">
+      <span id="timer-rotulo"></span>
+      <strong id="timer-tempo"></strong>
+    </div>
+    <button data-acao="timer-mais">+15 s</button>
+    <button data-acao="timer-saltar">Saltar</button>
+  </div>
+
+  <div id="toast" role="status" hidden></div>
+
+  <nav id="nav">
+    <a href="#hoje" data-sep="hoje"><span>🏠</span>Hoje</a>
+    <a href="#plano" data-sep="plano"><span>📋</span>Plano</a>
+    <a href="#pt" data-sep="pt"><span>💬</span>PT</a>
+    <a href="#progresso" data-sep="progresso"><span>📈</span>Progresso</a>
+    <a href="#mais" data-sep="mais"><span>⚙️</span>Mais</a>
+  </nav>
+  <noscript>A Treina precisa de JavaScript.</noscript>
+</body>
+</html>
