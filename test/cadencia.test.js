@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { lerCadencia, sequenciaCadencia, eventoAtual, duracaoRepeticao, EXPLOSIVA } from '../js/core/cadencia.js';
+import { lerCadencia, sequenciaCadencia, eventoAtual, duracaoRepeticao, eventosPreparacao, eventosRepeticao, EXPLOSIVA } from '../js/core/cadencia.js';
 
 test('lerCadencia aceita os formatos comuns', () => {
   assert.deepEqual(lerCadencia('2-0-1-1'), [
@@ -49,4 +49,18 @@ test('eventoAtual', () => {
   assert.equal(eventoAtual(eventos, 2.2).fase, 'desce');
   assert.equal(eventoAtual(eventos, 4.1).fase, 'sobe');
   assert.equal(eventoAtual(eventos, 9).tipo, 'fim');
+});
+
+test('repetições geradas uma a uma encaixam sem falhas (tocar sem fim)', () => {
+  const fases = lerCadencia('3-1-2-0');
+  const dur = duracaoRepeticao(fases);
+  const prep = eventosPreparacao(5);
+  assert.deepEqual(prep.map((e) => e.resta), [5, 4, 3, 2, 1]);
+  let t = prep.length;
+  const todos = [...prep];
+  for (let rep = 1; rep <= 20; rep++) { todos.push(...eventosRepeticao(fases, rep, t)); t += dur; }
+  // um sinal por segundo, sem buracos nem repetições
+  assert.deepEqual(todos.map((e) => e.t), Array.from({ length: 5 + 20 * 6 }, (_, i) => i));
+  assert.equal(todos.at(-1).rep, 20);
+  assert.equal(eventoAtual([...todos, { t: 11, tipo: 'alvo', rep: 1 }], 11.2).tipo, 'fase');
 });

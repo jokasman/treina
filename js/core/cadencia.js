@@ -39,27 +39,39 @@ export function duracaoRepeticao(fases) {
   return fases.reduce((t, f) => t + f.s, 0);
 }
 
+/** Sinais da contagem de preparação: um por segundo, começando em t = 0. */
+export function eventosPreparacao(preparacao) {
+  const n = Math.max(0, Math.round(preparacao || 0));
+  return Array.from({ length: n }, (_, i) => ({ t: i, tipo: 'prep', resta: n - i }));
+}
+
 /**
- * Sequência de sinais para `reps` repetições, precedida de `preparacao` segundos.
- * Cada segundo de cada fase tem o seu sinal; o primeiro segundo de cada fase tem o sinal de início de fase.
- * Eventos: { t, tipo: 'prep' | 'fase' | 'segundo' | 'fim', fase?, rep?, segundo?, total? , resta? }
+ * Sinais de uma repetição que começa no instante `inicio`.
+ * Cada segundo de cada fase tem o seu sinal; o primeiro segundo da fase tem o sinal de início de fase.
+ */
+export function eventosRepeticao(fases, rep, inicio) {
+  const eventos = [];
+  let t = inicio;
+  for (const f of fases) {
+    const total = Math.ceil(f.s);
+    eventos.push({ t, tipo: 'fase', fase: f.fase, rep, segundo: 1, total });
+    for (let k = 1; k < f.s; k++) eventos.push({ t: t + k, tipo: 'segundo', fase: f.fase, rep, segundo: k + 1, total });
+    t += f.s;
+  }
+  return eventos;
+}
+
+/**
+ * Sequência finita para `reps` repetições (a app usa as funções acima para tocar sem fim).
+ * Eventos: { t, tipo: 'prep' | 'fase' | 'segundo' | 'fim', fase?, rep?, segundo?, total?, resta? }
  */
 export function sequenciaCadencia({ fases, reps, preparacao = 0 }) {
-  const eventos = [];
-  let t = 0;
-  for (let k = Math.max(0, Math.round(preparacao)); k >= 1; k--) {
-    eventos.push({ t, tipo: 'prep', resta: k });
-    t += 1;
-  }
+  const eventos = eventosPreparacao(preparacao);
+  let t = eventos.length;
+  const dur = duracaoRepeticao(fases);
   for (let rep = 1; rep <= reps; rep++) {
-    for (const f of fases) {
-      const total = Math.ceil(f.s);
-      eventos.push({ t, tipo: 'fase', fase: f.fase, rep, segundo: 1, total });
-      for (let k = 1; k < f.s; k++) {
-        eventos.push({ t: t + k, tipo: 'segundo', fase: f.fase, rep, segundo: k + 1, total });
-      }
-      t += f.s;
-    }
+    eventos.push(...eventosRepeticao(fases, rep, t));
+    t += dur;
   }
   eventos.push({ t, tipo: 'fim', rep: reps });
   return { eventos, duracao: t };
@@ -69,6 +81,7 @@ export function sequenciaCadencia({ fases, reps, preparacao = 0 }) {
 export function eventoAtual(eventos, t) {
   let atual = null;
   for (const e of eventos) {
+    if (e.tipo === 'alvo') continue; // marca sonora, não muda o que se mostra
     if (e.t <= t + 1e-6) atual = e;
     else break;
   }

@@ -2,7 +2,7 @@
 import * as db from './db.js';
 import * as drive from './drive.js';
 import * as som from './som.js';
-import { lerCadencia, sequenciaCadencia, eventoAtual, NOMES_FASE } from './core/cadencia.js';
+import { lerCadencia, eventosPreparacao, eventosRepeticao, duracaoRepeticao, eventoAtual, NOMES_FASE } from './core/cadencia.js';
 import {
   estadoInicial, normalizarEstado, guardarPerfil, receberProposta, alteracoesProposta, aplicarProposta,
   descartarProposta, decisaoDesfazivel, desfazerDecisao, terminarSessao, apagarItem, registarPeso, fundir, paraSincronizar,
@@ -418,7 +418,7 @@ function vistaTreino() {
       return card(`
         ${a.grupo ? `<div class="grupo-titulo">🔁 ${esc(a.grupo)}</div>` : ''}
         ${htmlCabExercicio(a, 'h2')}
-        ${a.repsMin != null && lerCadencia(a.cadencia) ? `<button class="btn-cadencia" data-acao="cadencia" data-ex="${i}">🔊 Tocar cadência ${esc(a.cadencia)} · ${a.repsMax} reps${a.unilateral ? ' (um lado)' : ''}</button>` : ''}
+        ${a.repsMin != null && lerCadencia(a.cadencia) ? `<button class="btn-cadencia" data-acao="cadencia" data-ex="${i}">🔊 Tocar cadência ${esc(a.cadencia)} · alvo ${a.repsMax} reps${a.unilateral ? ' (um lado)' : ''}</button>` : ''}
         ${htmlComoFazer(a)}
         ${ultimo ? `<p class="pequeno ultimo">Última vez (${fmtData(ultimo.data)}): ${ultimo.series.map((x) => esc(fmtSerie({ ...x, esforco: null }))).join(', ')}</p>` : ''}
         <div class="series">
@@ -619,8 +619,9 @@ function desenharTimer() {
 
 // ---------------------------------------------------------------- treino: cadência com sinais sonoros
 
-let cadencia = null; // { nome, cadencia, reps, eventos, duracao, inicio }
+let cadencia = null; // { nome, cadencia, alvo, fases, duracao, inicio, eventos, proxRep, proxT }
 let intervaloCadencia = null;
+const ANTECEDENCIA = 8; // segundos de sinais agendados à frente
 
 async function iniciarCadencia(i) {
   const ex = estado.sessaoAtual?.exercicios[i];
@@ -629,13 +630,35 @@ async function iniciarCadencia(i) {
   pararTimer();
   pararCadencia();
   await som.preparar();
-  const reps = ex.alvo.repsMax || ex.alvo.repsMin || 10;
-  const { eventos, duracao } = sequenciaCadencia({ fases, reps, preparacao: som.preferencias().preparacao });
-  const inicio = som.tocarSequencia(eventos);
-  cadencia = { nome: ex.nome, cadencia: ex.alvo.cadencia, reps, eventos, duracao, inicio };
+  const prep = eventosPreparacao(som.preferencias().preparacao);
+  const inicio = som.iniciarRelogio();
+  som.agendar(prep, inicio);
+  cadencia = {
+    nome: ex.nome, cadencia: ex.alvo.cadencia, alvo: ex.alvo.repsMax || ex.alvo.repsMin || 10,
+    fases, duracao: duracaoRepeticao(fases), inicio, eventos: prep, proxRep: 1, proxT: prep.length,
+  };
   $('#cadencia [data-ui="volume"]').value = som.preferencias().volume;
-  intervaloCadencia = setInterval(desenharCadencia, 50);
+  agendarMaisCadencia();
+  intervaloCadencia = setInterval(() => { agendarMaisCadencia(); desenharCadencia(); }, 50);
   desenharCadencia();
+}
+
+/** Vai agendando repetições à frente, sem fim, até o utilizador parar. */
+function agendarMaisCadencia() {
+  const c = cadencia;
+  if (!c) return;
+  const t = som.agora() - c.inicio;
+  while (c.proxT < t + ANTECEDENCIA) {
+    const novos = eventosRepeticao(c.fases, c.proxRep, c.proxT);
+    if (c.proxRep === c.alvo) novos.push({ t: c.proxT + c.duracao, tipo: 'alvo', rep: c.alvo });
+    som.agendar(novos, c.inicio);
+    c.eventos.push(...novos);
+    c.proxT += c.duracao;
+    c.proxRep += 1;
+  }
+  // Mantém só os eventos recentes (a lista cresceria sem limite).
+  const corte = c.eventos.findIndex((e) => e.t > t - 5);
+  if (corte > 50) c.eventos.splice(0, corte - 1);
 }
 
 function pararCadencia() {
@@ -656,21 +679,19 @@ function desenharCadencia() {
   const fase = $('#cad-fase');
   const seg = $('#cad-seg');
   $('#cad-rotulo').textContent = `${cadencia.nome} · ${cadencia.cadencia}`;
-  el.dataset.fase = e?.fase || e?.tipo || 'prep';
+  el.dataset.fase = e?.fase || 'prep';
+  el.dataset.extra = e?.rep > cadencia.alvo ? 'sim' : 'nao';
   if (!e || e.tipo === 'prep') {
     fase.textContent = 'Prepara-te';
     seg.textContent = e ? String(e.resta) : '';
-    $('#cad-rep').textContent = `${cadencia.reps} repetições`;
-  } else if (e.tipo === 'fim') {
-    fase.textContent = 'Série concluída ✓';
-    seg.textContent = '';
-    $('#cad-rep').textContent = 'Regista a série com o emoji.';
-    if (t > cadencia.duracao + 3) pararCadencia();
+    $('#cad-rep').textContent = `Alvo: ${cadencia.alvo} repetições`;
   } else {
     const seta = { desce: '⬇', sobe: '⬆' }[e.fase] || '⏸';
     fase.textContent = `${seta} ${NOMES_FASE[e.fase]}`;
     seg.textContent = e.total > 1 ? `${e.segundo} / ${e.total}` : '';
-    $('#cad-rep').textContent = `Repetição ${e.rep} de ${cadencia.reps}`;
+    $('#cad-rep').textContent = e.rep > cadencia.alvo
+      ? `Repetição ${e.rep} · +${e.rep - cadencia.alvo} além do alvo (${cadencia.alvo})`
+      : `Repetição ${e.rep} de ${cadencia.alvo}`;
   }
 }
 

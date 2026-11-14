@@ -28,6 +28,7 @@ const SONS = {
   'sobe-seg': { f: 880, d: 0.08, onda: 'triangle', v: 0.75 },
   'pausa': { f: 587, d: 0.05, onda: 'sine', v: 0.7 },
   'pausa-seg': { f: 587, d: 0.04, onda: 'sine', v: 0.5 },
+  'alvo': { f: 1318, d: 0.15, onda: 'triangle', v: 0.9 },
   'fim': { f: 1046, d: 0.14, onda: 'triangle', v: 0.9 },
   'fim-2': { f: 1318, d: 0.25, onda: 'triangle', v: 0.9 },
 };
@@ -82,15 +83,19 @@ function somDoEvento(e) {
   return [e.tipo === 'fase' ? base : `${base}-seg`];
 }
 
-/** Agenda todos os sinais de uma sequência. Devolve o instante (relógio de áudio) em que começa. */
-export function tocarSequencia(eventos, atraso = 0.15) {
+/** Marca o início de uma sequência no relógio de áudio. */
+export function iniciarRelogio(atraso = 0.15) {
   parar();
-  const inicio = ctx.currentTime + atraso;
+  return ctx.currentTime + atraso;
+}
+
+/** Agenda sinais (t em segundos a partir de `inicio`, no relógio de áudio). */
+export function agendar(eventos, inicio) {
   for (const e of eventos) {
+    if (e.tipo === 'alvo') { tocar('alvo', inicio + e.t + 0.12); continue; }
     for (const nome of somDoEvento(e)) tocar(nome, inicio + e.t);
     if (e.tipo === 'fim') tocar('fim-2', inicio + e.t + 0.18);
   }
-  return inicio;
 }
 
 /** Amostra de todos os sons, para testar o volume. */
