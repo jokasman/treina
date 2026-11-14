@@ -351,3 +351,57 @@ test('tendência, ritmo e estado da meta de peso', () => {
   assert.equal(estadoPeso({ pesos: [], pesoAlvo: 80 }).estado, 'sem-dados');
   assert.equal(estadoPeso({ pesos: pesos.slice(0, 2), pesoAlvo: 80, hoje: '2026-10-02' }).estado, 'a-calcular');
 });
+
+// ---------- campos estruturados ----------
+
+import { blocosDoDia, etiquetasExercicio, fmtResistencia } from '../js/core/plano.js';
+
+test('validarPlano lê os campos transversais', () => {
+  const r = validarPlano({
+    aquecimento: '5 min de bicicleta', progressao: '+1 rep por semana',
+    dias: [{ nome: 'A', notas: 'Dia leve', exercicios: [
+      { nome: 'Elevação lateral', series: 3, repsMin: 12, repsMax: 20, carga: null, resistencia: 'elástico médio', unilateral: 'sim',
+        grupo: 'Supersérie 1', cadencia: '2-0-1-1', rir: '2', execucao: 'Pisa o elástico…', dicas: 'Sem balançar', maisFacil: 'Pisa com o pé do mesmo lado', maisDificil: 'Elástico forte' },
+      { nome: 'Flexões', series: 3, repsMin: 8, repsMax: 12, grupo: 'supersérie 1' },
+      { nome: 'Prancha', series: 3, tempo: 40 },
+    ] }],
+  });
+  assert.equal(r.ok, true, r.erros.join('\n'));
+  const [el, fl] = r.plano.dias[0].exercicios;
+  assert.equal(r.plano.aquecimento, '5 min de bicicleta');
+  assert.equal(r.plano.dias[0].notas, 'Dia leve');
+  assert.equal(el.unilateral, true);
+  assert.equal(el.rir, 2);
+  assert.equal(fl.unilateral, false);
+  assert.equal(fmtAlvo(el), '3 × 12–20 por lado · elástico médio');
+  assert.equal(fmtResistencia({ carga: 10, resistencia: 'mochila' }), '10 kg (mochila)');
+  assert.deepEqual(etiquetasExercicio(el), ['cadência 2-0-1-1', '2 reps em reserva']);
+  const blocos = blocosDoDia(r.plano.dias[0]);
+  assert.equal(blocos.length, 2);
+  assert.equal(blocos[0].itens.length, 2);
+  assert.equal(validarPlano({ dias: [{ nome: 'A', exercicios: [{ nome: 'X', series: 3, repsMin: 5, rir: 9 }] }] }).ok, false);
+});
+
+test('diffPlanos trata os campos novos e ignora vazios de planos antigos', () => {
+  const antigo = validarPlano(planoBase()).plano;
+  for (const d of antigo.dias) for (const e of d.exercicios) { delete e.grupo; delete e.unilateral; delete e.cadencia; delete e.execucao; }
+  const novo = validarPlano(planoBase()).plano;
+  assert.deepEqual(diffPlanos(antigo, novo), []);
+  novo.aquecimento = '5 min';
+  novo.dias[0].exercicios[0].execucao = 'Desce devagar';
+  novo.dias[0].exercicios[0].cadencia = '3-1-1-0';
+  const d = diffPlanos(antigo, novo).map((x) => x.texto);
+  assert.ok(d.includes('Aquecimento alterado.'), d.join('\n'));
+  assert.ok(d.some((t) => t.includes('Agachamento: cadência — → 3-1-1-0; execução acrescentada')), d.join('\n'));
+});
+
+test('a mensagem envia o plano sem campos vazios e explica os campos próprios', () => {
+  const e = estadoInicial();
+  e.perfil = { objetivo: 'massa', diasSemana: 3 };
+  e.plano = { ...validarPlano(planoBase()).plano, aprovadoEm: 1 };
+  const m = construirMensagem({ modo: 'conversa', estado: e, hoje: '2026-11-14' });
+  const bloco = m.split('## Plano ativo')[1];
+  assert.doesNotMatch(bloco, /"grupo"|"unilateral"|aprovadoEm|"execucao": ""/);
+  assert.match(bloco, /"carga": null/);
+  assert.match(m, /Usa SEMPRE estes campos próprios/);
+});

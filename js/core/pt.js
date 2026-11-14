@@ -12,13 +12,32 @@ const FORMATO = `{
   "resumo": "Uma frase sobre o que propões ou mudaste",
   "plano": {
     "nome": "Nome do plano",
-    "notas": "Indicações gerais: aquecimento, como progredir nas cargas, semanas de descarga…",
+    "aquecimento": "Como aquecer antes de cada treino",
+    "progressao": "Regra para subir cargas ou repetições",
+    "notas": "Outras indicações gerais (semanas de descarga, etc.)",
     "dias": [
       {
         "nome": "Treino A",
         "foco": "Corpo inteiro",
+        "notas": "Indicações só deste dia (opcional)",
         "exercicios": [
-          { "nome": "Agachamento com barra", "series": 3, "repsMin": 8, "repsMax": 10, "carga": 40, "descanso": 120, "notas": "Deixa 2 repetições em reserva" },
+          {
+            "nome": "Agachamento goblet",
+            "series": 3, "repsMin": 8, "repsMax": 12,
+            "carga": 16, "descanso": 90,
+            "cadencia": "3-1-1-0", "rir": 2,
+            "execucao": "Haltere junto ao peito, pés à largura dos ombros; desce com o tronco direito até as coxas ficarem paralelas ao chão e sobe a empurrar o chão.",
+            "dicas": "Joelhos na direção dos pés; calcanhares sempre no chão",
+            "maisFacil": "Agachamento para um banco",
+            "maisDificil": "Agachamento búlgaro"
+          },
+          {
+            "nome": "Elevação lateral com elástico",
+            "series": 3, "repsMin": 12, "repsMax": 15,
+            "carga": null, "resistencia": "elástico médio", "unilateral": true,
+            "grupo": "Supersérie 1", "descanso": 45
+          },
+          { "nome": "Flexões", "series": 3, "repsMin": 8, "repsMax": 12, "carga": null, "grupo": "Supersérie 1", "descanso": 45 },
           { "nome": "Prancha", "series": 3, "tempo": 45, "carga": null, "descanso": 60 }
         ]
       }
@@ -26,6 +45,15 @@ const FORMATO = `{
   },
   "perfil": { "pesoAlvo": 78 }
 }`;
+
+/** JSON do plano sem campos vazios (mensagem mais curta e legível para o PT). */
+function planoJson(plano) {
+  return JSON.stringify(plano, (k, v) => {
+    if (k === 'aprovadoEm') return undefined;
+    if (k === 'carga') return v;
+    return v === '' || v === false || v === null ? undefined : v;
+  }, 2);
+}
 
 function instrucoes(perfil) {
   const esp = ESPECIALIDADE[perfil?.objetivo] || 'treino físico';
@@ -44,7 +72,13 @@ ${FORMATO}
    - "plano" é sempre o PLANO COMPLETO (todos os dias e exercícios), não só o que muda. Omite "plano" se não o alteraste.
    - "perfil" só tem os campos do perfil que mudam (por exemplo pesoAlvo, dataAlvo, diasSemana, duracao, meta, notas). Omite-o se nada mudou.
    - Usa "repsMin"/"repsMax" para exercícios por repetições ou "tempo" (em segundos) para exercícios por tempo.
-   - "carga" em kg (número) ou null para peso corporal. "descanso" em segundos.
+   - "carga" em kg (número) ou null. Se a resistência não for em kg (elástico, mochila, máquina sem números…), usa "carga": null e descreve-a em "resistencia".
+   - "descanso" em segundos. "cadencia" no formato excêntrica-pausa-concêntrica-pausa (ex.: "3-1-1-0"). "rir" = repetições em reserva (0 a 5).
+   - "unilateral": true quando as repetições são por lado (faz-se um lado e depois o outro).
+   - "grupo": o mesmo texto em exercícios seguidos feitos em supersérie ou circuito (ex.: "Supersérie 1", "Circuito A"). A app mostra-os juntos.
+   - "execucao": como fazer o movimento. "dicas": pontos-chave curtos. "maisFacil" / "maisDificil": variantes para regredir ou progredir.
+   - Usa SEMPRE estes campos próprios. "notas" é só para o que não cabe em nenhum deles. No plano, usa "aquecimento" e "progressao" em vez de pôr isso em "notas".
+   - Todos os campos, exceto nome, séries e repetições/tempo, são opcionais: omite os que não se aplicam.
    - Mantém os mesmos nomes de dias e exercícios quando não mudam, para eu ver bem as diferenças.
 5. Se a tua resposta não mudar o plano nem o perfil, não incluas o bloco.
 6. Vou rever as alterações na app antes de as aplicar.`;
@@ -78,11 +112,11 @@ export function construirMensagem({ modo, estado, pedido = '', incluirHistorico 
   const plano = modo === 'rever' && estado.proposta ? estado.proposta.plano : estado.plano;
   if (modo === 'rever' && estado.proposta) {
     p.push('## Proposta de plano em discussão (ainda não aprovada)');
-    p.push('```json\n' + JSON.stringify(estado.proposta.plano, null, 2) + '\n```');
+    p.push('```json\n' + planoJson(estado.proposta.plano) + '\n```');
     if (estado.plano) p.push('(Tenho também um plano ativo; esta proposta vai substituí-lo quando eu a aprovar.)');
   } else if (plano) {
     p.push('## Plano ativo');
-    p.push('```json\n' + JSON.stringify(plano, null, 2) + '\n```');
+    p.push('```json\n' + planoJson(plano) + '\n```');
   } else {
     p.push('## Plano\nAinda não tenho plano.');
   }

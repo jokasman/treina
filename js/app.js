@@ -8,7 +8,7 @@ import {
 import {
   OBJETIVOS, SEXO, LOCAIS, MATERIAL, EXPERIENCIA, LIMITACOES, DURACOES, rotulo, validarPerfil, valorLegivel,
 } from './core/perfil.js';
-import { fmtAlvo, fmtReps } from './core/plano.js';
+import { fmtAlvo, fmtReps, etiquetasExercicio, blocosDoDia } from './core/plano.js';
 import {
   ESFORCOS, proximoDia, ultimoDesempenho, novaSessao, novaSerie, fmtSerie, ordenarSessoes, seriesFeitas,
   treinosNaSemana, evolucaoExercicio, nomesExercicios, rotuloEsforco,
@@ -309,17 +309,51 @@ function iconeAlteracao(tipo) {
   return { novo: '✦', adicionado: '+', removido: '−', alterado: '~' }[tipo] || '•';
 }
 
+function htmlComoFazer(e) {
+  const partes = [];
+  if (e.execucao) partes.push(`<p>${esc(e.execucao)}</p>`);
+  if (e.maisFacil) partes.push(`<p><span class="rot">Mais fácil:</span> ${esc(e.maisFacil)}</p>`);
+  if (e.maisDificil) partes.push(`<p><span class="rot">Mais difícil:</span> ${esc(e.maisDificil)}</p>`);
+  if (e.notas) partes.push(`<p><span class="rot">Notas:</span> ${esc(e.notas)}</p>`);
+  if (!partes.length) return '';
+  return `<details class="como-fazer"><summary>${e.execucao ? 'Como fazer' : 'Mais informação'}</summary>${partes.join('')}</details>`;
+}
+
+/** Cabeçalho comum de um exercício: nome, alvo, etiquetas e dicas. */
+function htmlCabExercicio(e, tag = 'strong') {
+  const etq = etiquetasExercicio(e);
+  return `
+    <div class="ex-nome"><${tag}>${esc(e.nome)}</${tag}></div>
+    <div class="ex-alvo">${esc(fmtAlvo(e))}</div>
+    ${etq.length ? `<div class="ex-tags">${etq.map((t) => `<span>${esc(t)}</span>`).join('')}</div>` : ''}
+    ${e.dicas ? `<p class="ex-dicas">💡 ${esc(e.dicas)}</p>` : ''}`;
+}
+
+function htmlSecao(titulo, texto) {
+  return texto ? `<div class="secao-plano"><h3>${titulo}</h3><p>${esc(texto)}</p></div>` : '';
+}
+
 function htmlPlano(plano) {
   return `
-    ${plano.notas ? `<p class="notas">${esc(plano.notas)}</p>` : ''}
+    ${htmlSecao('🔥 Aquecimento', plano.aquecimento)}
+    ${htmlSecao('📈 Progressão', plano.progressao)}
+    ${htmlSecao('📝 Indicações gerais', plano.notas)}
     ${plano.dias.map((d) => `
       <div class="dia">
-        <h3>${esc(d.nome)}${d.foco ? ` <span class="muted">· ${esc(d.foco)}</span>` : ''}</h3>
-        <ul class="lista-ex detalhada">${d.exercicios.map((e) => `
-          <li><div><strong>${esc(e.nome)}</strong>${e.notas ? `<div class="muted pequeno">${esc(e.notas)}</div>` : ''}</div>
-          <div class="alvo">${esc(fmtAlvo(e))}${e.descanso != null ? `<div class="muted pequeno">descanso ${fmtTempo(e.descanso)}</div>` : ''}</div></li>`).join('')}
-        </ul>
+        <h3 class="dia-titulo">${esc(d.nome)}${d.foco ? ` <span class="muted">· ${esc(d.foco)}</span>` : ''}</h3>
+        ${d.notas ? `<p class="muted pequeno">${esc(d.notas)}</p>` : ''}
+        ${blocosDoDia(d).map((b) => {
+          const itens = b.itens.map(({ ex }) => `<li class="ex">${htmlCabExercicio(ex)}${htmlComoFazer(ex)}</li>`).join('');
+          return b.grupo && b.itens.length > 1
+            ? `<div class="grupo"><div class="grupo-titulo">🔁 ${esc(b.grupo)} <span class="muted">· alterna os exercícios, descansa no fim da volta</span></div><ul class="lista-ex2">${itens}</ul></div>`
+            : `<ul class="lista-ex2">${itens}</ul>`;
+        }).join('')}
       </div>`).join('')}`;
+}
+
+/** Plano com indicações escritas nas notas em vez dos campos próprios (planos antigos). */
+function planoPorOrganizar(plano) {
+  return plano.dias.some((d) => d.exercicios.some((e) => (e.notas || '').length > 120 && !e.execucao));
 }
 
 function vistaProposta() {
@@ -357,6 +391,8 @@ function vistaPlano() {
   const decisoes = [...estado.decisoes].sort((a, b) => b.em - a.em);
   const html = `
     ${estado.proposta ? `<a class="aviso" href="#proposta">📩 Há uma proposta do PT por rever</a>` : ''}
+    ${planoPorOrganizar(plano) ? card(`<h2>Organizar o plano</h2><p class="pequeno">Este plano tem muitas indicações nas notas. Pede ao PT para as passar para os campos próprios (execução, dicas, cadência, superséries…).</p>
+      <button class="btn primario largo" data-acao="pt-organizar">Pedir ao PT para organizar</button>`, 'destaque') : ''}
     ${card(`<h2>${esc(plano.nome)}</h2>${plano.aprovadoEm ? `<p class="muted pequeno">Aprovado a ${fmtData(hojeIso(new Date(plano.aprovadoEm)), { ano: true })}</p>` : ''}${htmlPlano(plano)}
       <a class="btn secundario largo" href="#pt">💬 Falar com o PT sobre o plano</a>`)}
     ${card(`<h2>Decisões do PT</h2>
@@ -378,11 +414,12 @@ function vistaTreino() {
       const porTempo = a.repsMin == null;
       const ultimo = ultimoDesempenho(ex.nome, estado.sessoes);
       return card(`
-        <div class="linha-topo"><h2>${esc(ex.nome)}</h2><span class="etiqueta">${esc(fmtAlvo(a))}</span></div>
-        ${a.notas ? `<p class="muted pequeno">${esc(a.notas)}</p>` : ''}
+        ${a.grupo ? `<div class="grupo-titulo">🔁 ${esc(a.grupo)}</div>` : ''}
+        ${htmlCabExercicio(a, 'h2')}
+        ${htmlComoFazer(a)}
         ${ultimo ? `<p class="pequeno ultimo">Última vez (${fmtData(ultimo.data)}): ${ultimo.series.map((x) => esc(fmtSerie({ ...x, esforco: null }))).join(', ')}</p>` : ''}
         <div class="series">
-          <div class="serie cab"><span>#</span><span>${porTempo ? 'Tempo (s)' : 'Reps'}</span><span>Carga (kg)</span><span>Como foi?</span></div>
+          <div class="serie cab"><span>#</span><span>${porTempo ? 'Tempo (s)' : 'Reps'}${a.unilateral ? ' /lado' : ''}</span><span>Carga (kg)</span><span>Como foi?</span></div>
           ${ex.series.map((x, j) => `
             <div class="serie ${x.feita ? 'feita' : ''}">
               <span class="num">${j + 1}</span>
@@ -667,6 +704,11 @@ function atualizarSync() {
 
 const ACOES = {
   'pt-criar': () => { ui.modoPT = 'criar'; ir('pt'); },
+  'pt-organizar': () => {
+    ui.modoPT = 'conversa';
+    ui.pedidoPT = 'Reorganiza o plano ativo usando os campos próprios do formato (aquecimento, progressao, execucao, dicas, cadencia, rir, grupo, unilateral, resistencia, maisFacil, maisDificil), tirando essa informação das notas. Não alteres exercícios, séries, repetições, cargas nem descansos. Envia o plano completo no bloco treina.';
+    ir('pt');
+  },
   'pt-modo': (el) => { ui.modoPT = el.dataset.modo; render(); },
   'pt-partilhar': () => partilharComClaude(),
   'pt-abrir': () => {
@@ -722,8 +764,12 @@ const ACOES = {
       s.feita = true; s.esforco = v;
       if (ex.alvo.repsMin != null && s.reps == null) s.reps = v === 'falhei' ? null : ex.alvo.repsMax;
       if (ex.alvo.repsMin == null && s.tempo == null) s.tempo = ex.alvo.tempo ?? null;
-      const ultima = i === estado.sessaoAtual.exercicios.length - 1 && j === ex.series.length - 1;
-      if (!eraFeita && !ultima) iniciarTimer(ex.alvo.descanso ?? 90, ex.nome);
+      const exs = estado.sessaoAtual.exercicios;
+      const ultima = i === exs.length - 1 && j === ex.series.length - 1;
+      const seguinte = exs[i + 1];
+      const emGrupo = ex.alvo.grupo && seguinte?.alvo.grupo && seguinte.alvo.grupo === ex.alvo.grupo;
+      if (!eraFeita && emGrupo) toast(`${ex.alvo.grupo}: passa já para ${seguinte.nome}`);
+      else if (!eraFeita && !ultima) iniciarTimer(ex.alvo.descanso ?? 90, ex.alvo.grupo || ex.nome);
     }
     mudar((e) => e, { sync: false });
   },
