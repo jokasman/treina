@@ -34,6 +34,13 @@
     <button data-acao="timer-saltar">Saltar</button>
   </div>
 
+  <div id="cadencia" hidden>
+    <div class="cad-topo"><span id="cad-rotulo"></span><button data-acao="cadencia-parar">Parar</button></div>
+    <div class="cad-centro"><strong id="cad-fase"></strong><span id="cad-seg"></span></div>
+    <div id="cad-rep"></div>
+    <label class="cad-vol"><span aria-hidden="true">🔈</span><input type="range" min="0" max="100" step="5" data-ui="volume" aria-label="Volume dos sinais"><span aria-hidden="true">🔊</span></label>
+  </div>
+
   <div id="toast" role="status" hidden></div>
 
   <nav id="nav">

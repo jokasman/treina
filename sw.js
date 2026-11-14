@@ -1,5 +1,5 @@
 // Service worker: guarda a app para funcionar sem rede (ginásio). Os pedidos ao Google não passam por aqui.
-const VERSAO = 'treina-v2';
+const VERSAO = 'treina-v3';
 const FICHEIROS = [
   './',
   './index.html',
@@ -9,6 +9,8 @@ const FICHEIROS = [
   './js/config.js',
   './js/db.js',
   './js/drive.js',
+  './js/som.js',
+  './js/core/cadencia.js',
   './js/core/estado.js',
   './js/core/perfil.js',
   './js/core/peso.js',

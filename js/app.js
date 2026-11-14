@@ -1,6 +1,8 @@
 // Interface da app Treina.
 import * as db from './db.js';
 import * as drive from './drive.js';
+import * as som from './som.js';
+import { lerCadencia, sequenciaCadencia, eventoAtual, NOMES_FASE } from './core/cadencia.js';
 import {
   estadoInicial, normalizarEstado, guardarPerfil, receberProposta, alteracoesProposta, aplicarProposta,
   descartarProposta, decisaoDesfazivel, desfazerDecisao, terminarSessao, apagarItem, registarPeso, fundir, paraSincronizar,
@@ -416,6 +418,7 @@ function vistaTreino() {
       return card(`
         ${a.grupo ? `<div class="grupo-titulo">🔁 ${esc(a.grupo)}</div>` : ''}
         ${htmlCabExercicio(a, 'h2')}
+        ${a.repsMin != null && lerCadencia(a.cadencia) ? `<button class="btn-cadencia" data-acao="cadencia" data-ex="${i}">🔊 Tocar cadência ${esc(a.cadencia)} · ${a.repsMax} reps${a.unilateral ? ' (um lado)' : ''}</button>` : ''}
         ${htmlComoFazer(a)}
         ${ultimo ? `<p class="pequeno ultimo">Última vez (${fmtData(ultimo.data)}): ${ultimo.series.map((x) => esc(fmtSerie({ ...x, esforco: null }))).join(', ')}</p>` : ''}
         <div class="series">
@@ -520,6 +523,13 @@ function vistaMais() {
         : `<p>Liga a tua conta Google para guardar os treinos no Drive e usá-los noutros dispositivos.</p>
           ${ui.sync === 'erro' ? `<p class="pequeno texto-erro">${esc(ui.syncErro)}</p>` : ''}
           <button class="btn primario largo" data-acao="drive-ligar">Entrar com Google</button>`}`)}
+    ${card(`<h2>Sinais sonoros da cadência</h2>
+      <p class="muted pequeno">Um sinal por segundo em cada fase: grave a descer, agudo a subir, clique nas pausas. Os sinais sobrepõem-se à música.</p>
+      <label class="campo"><span>Volume dos sinais: <strong id="vol-valor">${som.preferencias().volume}%</strong></span>
+        <input type="range" min="0" max="100" step="5" value="${som.preferencias().volume}" data-ui="volume"></label>
+      <label class="campo"><span>Tempo de preparação antes da 1.ª repetição (segundos)</span>
+        <input inputmode="numeric" value="${som.preferencias().preparacao}" data-ui="preparacao"></label>
+      <button class="btn secundario largo" data-acao="som-testar">▶ Testar sons</button>`)}
     ${card(`<h2>Cópia de segurança</h2>
       <div class="botoes-2"><button class="btn secundario" data-acao="exportar">Exportar</button>
       <label class="btn secundario">Importar<input type="file" accept="application/json,.json" data-acao-ficheiro="importar" hidden></label></div>
@@ -564,7 +574,7 @@ function render() {
   sync.hidden = !drive.ligado();
   sync.dataset.estado = ui.sync;
   sync.title = ui.sync === 'erro' ? ui.syncErro : 'Sincronizar';
-  if (rota === 'treino' && estado.sessaoAtual) pedirEcraLigado(); else largarEcra();
+  if (rota === 'treino' && estado.sessaoAtual) pedirEcraLigado(); else { largarEcra(); pararCadencia(); }
   if (rota === 'mais') drive.preparar();
   desenharTimer();
 }
@@ -578,6 +588,7 @@ function largarEcra() { if (wakeLock) { wakeLock.release().catch(() => {}); wake
 
 let intervaloTimer = null;
 function iniciarTimer(segundos, rotuloTimer) {
+  pararCadencia();
   timer = { fim: Date.now() + segundos * 1000, total: segundos, rotulo: rotuloTimer };
   clearInterval(intervaloTimer);
   intervaloTimer = setInterval(desenharTimer, 250);
@@ -603,6 +614,63 @@ function desenharTimer() {
     timer.avisado = true;
     try { navigator.vibrate?.([250, 120, 250]); } catch { /* opcional */ }
     setTimeout(() => { if (timer?.avisado) pararTimer(); }, 8000);
+  }
+}
+
+// ---------------------------------------------------------------- treino: cadência com sinais sonoros
+
+let cadencia = null; // { nome, cadencia, reps, eventos, duracao, inicio }
+let intervaloCadencia = null;
+
+async function iniciarCadencia(i) {
+  const ex = estado.sessaoAtual?.exercicios[i];
+  const fases = ex && lerCadencia(ex.alvo.cadencia);
+  if (!fases) return;
+  pararTimer();
+  pararCadencia();
+  await som.preparar();
+  const reps = ex.alvo.repsMax || ex.alvo.repsMin || 10;
+  const { eventos, duracao } = sequenciaCadencia({ fases, reps, preparacao: som.preferencias().preparacao });
+  const inicio = som.tocarSequencia(eventos);
+  cadencia = { nome: ex.nome, cadencia: ex.alvo.cadencia, reps, eventos, duracao, inicio };
+  $('#cadencia [data-ui="volume"]').value = som.preferencias().volume;
+  intervaloCadencia = setInterval(desenharCadencia, 50);
+  desenharCadencia();
+}
+
+function pararCadencia() {
+  if (!cadencia) return;
+  som.parar();
+  som.adormecer();
+  cadencia = null;
+  clearInterval(intervaloCadencia);
+  desenharCadencia();
+}
+
+function desenharCadencia() {
+  const el = $('#cadencia');
+  if (!cadencia) { el.hidden = true; return; }
+  el.hidden = false;
+  const t = som.agora() - cadencia.inicio;
+  const e = eventoAtual(cadencia.eventos, t);
+  const fase = $('#cad-fase');
+  const seg = $('#cad-seg');
+  $('#cad-rotulo').textContent = `${cadencia.nome} · ${cadencia.cadencia}`;
+  el.dataset.fase = e?.fase || e?.tipo || 'prep';
+  if (!e || e.tipo === 'prep') {
+    fase.textContent = 'Prepara-te';
+    seg.textContent = e ? String(e.resta) : '';
+    $('#cad-rep').textContent = `${cadencia.reps} repetições`;
+  } else if (e.tipo === 'fim') {
+    fase.textContent = 'Série concluída ✓';
+    seg.textContent = '';
+    $('#cad-rep').textContent = 'Regista a série com o emoji.';
+    if (t > cadencia.duracao + 3) pararCadencia();
+  } else {
+    const seta = { desce: '⬇', sobe: '⬆' }[e.fase] || '⏸';
+    fase.textContent = `${seta} ${NOMES_FASE[e.fase]}`;
+    seg.textContent = e.total > 1 ? `${e.segundo} / ${e.total}` : '';
+    $('#cad-rep').textContent = `Repetição ${e.rep} de ${cadencia.reps}`;
   }
 }
 
@@ -789,6 +857,7 @@ const ACOES = {
     if (!n && !confirm('Não registaste nenhuma série. Terminar mesmo assim?')) return;
     const id = estado.sessaoAtual.id;
     pararTimer();
+    pararCadencia();
     mudar((e) => terminarSessao(e), { desenhar: false });
     toast('Treino guardado. 💪');
     ir(`sessao/${encodeURIComponent(id)}`);
@@ -801,6 +870,9 @@ const ACOES = {
   },
   'timer-mais': () => { if (timer) { timer.fim += 15000; timer.total += 15; timer.avisado = false; desenharTimer(); } },
   'timer-saltar': () => pararTimer(),
+  cadencia: (el) => iniciarCadencia(Number(el.dataset.ex)),
+  'cadencia-parar': () => pararCadencia(),
+  'som-testar': async () => { await som.preparar(); som.testar(); },
   'contar-pt': (el) => {
     const s = estado.sessoes.find((x) => x.id === el.dataset.id);
     ui.modoPT = 'conversa';
@@ -869,6 +941,18 @@ document.addEventListener('input', (ev) => {
     return;
   }
   if (el.dataset.ui === 'resposta') { ui.resposta = el.value; return; }
+  if (el.dataset.ui === 'volume') {
+    const { volume } = som.gravarPreferencias({ volume: el.value });
+    document.querySelectorAll('[data-ui="volume"]').forEach((x) => { if (x !== el) x.value = volume; });
+    const v = $('#vol-valor');
+    if (v) v.textContent = `${volume}%`;
+    return;
+  }
+  if (el.dataset.ui === 'preparacao') {
+    const n = lerNumero(el.value);
+    if (n != null) som.gravarPreferencias({ preparacao: n });
+    return;
+  }
   const campo = el.dataset.campo;
   const s = estado.sessaoAtual;
   if (!campo || !s) return;
